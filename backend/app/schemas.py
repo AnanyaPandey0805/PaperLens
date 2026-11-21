@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Any
 from pydantic import BaseModel, Field, field_validator
 
 class PaperInput(BaseModel):
@@ -21,7 +21,6 @@ class SourcePaper(BaseModel):
     source: str = "arXiv"
     similarity_percentage: int = Field(default=0, ge=0, le=100)
     relevance_explanation: str = ""
-
 
 class Finding(BaseModel):
     dimension: Literal["novelty", "methodology", "dataset_evidence"]
@@ -53,6 +52,80 @@ class AgentActivity(BaseModel):
     duration_ms: float | None = None
     metrics: dict[str, str | int | float] = Field(default_factory=dict)
 
+# --- Req 1: Context Sharing & State Updates ---
+class StateTransition(BaseModel):
+    step_number: int
+    stage_name: str
+    source_agent: str
+    target_agent: str
+    keys_updated: list[str]
+    intermediate_summary: str
+    timestamp: str
+
+# --- Req 6 & 7: A2A Inter-Agent Protocol Communication ---
+class A2AMessageExchange(BaseModel):
+    protocol: str = "A2A Protocol (JSON-RPC 2.0)"
+    sender_framework: str = "CrewAI Specialist Reviewer"
+    receiver_framework: str = "Google ADK Adversarial Critic"
+    handshake_card: str = "/.well-known/agent-card.json"
+    method: str = "message/send"
+    request_payload: dict[str, Any] = Field(default_factory=dict)
+    response_payload: dict[str, Any] = Field(default_factory=dict)
+    duration_ms: float
+    status: str = "SUCCESS"
+
+# --- Multi-Agent Debate & Challenge Questions ---
+class ChallengeQuestion(BaseModel):
+    id: str
+    challenger_name: str
+    challenger_role: str
+    challenger_framework: str
+    target: str
+    category: Literal["novelty", "methodology", "dataset_evidence", "adversarial_critique"]
+    question: str = Field(max_length=1500)
+    urgency: Literal["critical", "major", "minor"]
+    status: Literal["open_challenge", "addressed_in_rebuttal", "requires_camera_ready_ablation"]
+    context_source: str = ""
+
+class AgentDebateMessage(BaseModel):
+    message_id: str
+    round: int
+    phase: str
+    sender_name: str
+    sender_role: str
+    sender_framework: str
+    avatar_icon: str = "bot"
+    speech: str = Field(max_length=3500)
+    challenge_question: ChallengeQuestion | None = None
+    response_to_challenge_id: str | None = None
+    timestamp: str
+
+# --- Req 8: Guardrails Auditing ---
+class GuardrailAudit(BaseModel):
+    id: str
+    layer: Literal["Layer 1: Input Ingestion", "Layer 2: Tool & MCP Boundary", "Layer 3: Multi-Agent & A2A Boundary", "Layer 4: Output Synthesis & Schema"]
+    guardrail_name: str
+    status: Literal["PASSED", "WARNING", "TRIGGERED_REMEDIATION", "BLOCKED"]
+    code_location: str
+    policy_description: str
+    audit_findings: str
+
+# --- Req 2: Model Context Protocol (MCP) Tool Invocations ---
+class McpToolInvocation(BaseModel):
+    call_id: str
+    timestamp: str
+    agent_name: str
+    tool_name: str
+    server_name: str = "paperlens-research-tools"
+    protocol: str = "Model Context Protocol (JSON-RPC 2.0)"
+    transport: str = "stdio / FastMCP Process"
+    request_jsonrpc: dict[str, Any] = Field(default_factory=dict)
+    response_summary: str
+    response_jsonrpc: dict[str, Any] = Field(default_factory=dict)
+    duration_ms: float
+    status: Literal["SUCCESS", "FALLBACK_CACHE", "FAILED"]
+
+# --- Req 3: Pydantic Structured Output ---
 class ReviewReport(BaseModel):
     review_id: str
     paper_title: str
@@ -69,6 +142,14 @@ class ReviewReport(BaseModel):
     duration_ms: float
     events: list[PipelineEvent]
     agent_activities: list[AgentActivity] = Field(default_factory=list)
+    
+    # 10 Minimum Requirements Artifacts:
+    challenge_questions: list[ChallengeQuestion] = Field(default_factory=list)
+    agent_conversation: list[AgentDebateMessage] = Field(default_factory=list)
+    guardrail_audits: list[GuardrailAudit] = Field(default_factory=list)
+    mcp_invocations: list[McpToolInvocation] = Field(default_factory=list)
+    state_transitions: list[StateTransition] = Field(default_factory=list)
+    a2a_exchanges: list[A2AMessageExchange] = Field(default_factory=list)
 
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant", "system"]
@@ -85,4 +166,35 @@ class ChatResponse(BaseModel):
     reply: str
     suggested_questions: list[str] = Field(default_factory=list)
 
+class McpInvokeRequest(BaseModel):
+    tool_name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    calling_agent: str = "Interactive Playground Agent"
 
+class McpInvokeResponse(BaseModel):
+    invocation: McpToolInvocation
+    result: Any
+
+# --- Req 10: Evaluation & Cost Summary Schema ---
+class EvaluationCaseResult(BaseModel):
+    id: str
+    title: str
+    latency_ms: float
+    running_time_seconds: float
+    novelty_score: int | None = None
+    feasibility_score: int | None = None
+    evidence_coverage: float | None = None
+    sources_retrieved: int = 0
+    findings_count: int = 0
+    estimated_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+    guardrails_passed: int = 0
+    mode: str = "demo_fallback"
+
+class EvaluationSummary(BaseModel):
+    total_cases_evaluated: int
+    average_latency_ms: float
+    average_running_time_s: float
+    total_estimated_cost_usd: float
+    average_cost_per_review_usd: float
+    results: list[EvaluationCaseResult] = Field(default_factory=list)

@@ -1,6 +1,19 @@
 """CrewAI specialist tasks for Novelty, Methodology, and Dataset/Evidence analysis. Returns None when no Groq key is configured."""
-import os, traceback
+import os, traceback, asyncio, socket
 from .config import settings
+
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+
+def is_network_available() -> bool:
+    """Fast check whether external outbound internet is accessible."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.6)
+        s.connect(("8.8.8.8", 53))
+        s.close()
+        return True
+    except Exception:
+        return False
 
 try:
     import truststore
@@ -18,10 +31,21 @@ except Exception:
 async def run_crewai_review(title, text, sources):
     # Keep the CrewAI prompt within Groq's token quota.
     text = text[:8000]
-    if not settings.groq_api_key:
+    if not settings.groq_api_key or not is_network_available():
         return None
 
     try:
+        import tempfile, pathlib
+        try:
+            from crewai_core import token_manager
+            def _safe_storage_path() -> pathlib.Path:
+                p = pathlib.Path(tempfile.gettempdir()) / "crewai_storage"
+                p.mkdir(parents=True, exist_ok=True)
+                return p
+            token_manager.TokenManager._get_secure_storage_path = staticmethod(_safe_storage_path)
+        except Exception:
+            pass
+
         from crewai import Agent, Task, Crew, Process, LLM
 
         # Workaround: Groq rejects CrewAI's Anthropic-only cache marker.
@@ -42,6 +66,7 @@ async def run_crewai_review(title, text, sources):
             model=f"groq/{settings.groq_model}",
             api_key=settings.groq_api_key,
             ssl_verify=False,
+            timeout=10,
         )
 
         context = "\n".join(
@@ -125,7 +150,7 @@ async def run_crewai_review(title, text, sources):
             task_callback=task_logging_callback,
         )
 
-        result = await crew.kickoff_async()
+        result = await asyncio.wait_for(crew.kickoff_async(), timeout=30.0)
 
 
         task_list = []

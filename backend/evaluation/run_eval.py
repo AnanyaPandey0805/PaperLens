@@ -1,65 +1,94 @@
-"""End-to-end performance evaluation, latency, running time, and cost estimation benchmark."""
-import json, time, urllib.request
+"""End-to-end performance evaluation, latency, running time, token cost, and guardrails benchmark."""
+import os
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+import asyncio, json, time, sys
 from pathlib import Path
 
-API = "http://127.0.0.1:8000/api/review"
+# Add backend directory to sys.path
+backend_dir = Path(__file__).resolve().parents[1]
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+
+from app.pipeline import run_review
+from app.schemas import EvaluationSummary, EvaluationCaseResult
+
 cases_file = Path(__file__).with_name("sample_cases.jsonl")
 cases = [json.loads(x) for x in cases_file.read_text(encoding="utf-8").splitlines() if x.strip()]
 
-# Pricing per million tokens (Groq llama-3.3-70b / gpt-oss-120b standard rates)
+# Pricing per million tokens (Standard production rates: $0.59 / 1M input, $0.79 / 1M output)
 INPUT_COST_PER_M = 0.59
 OUTPUT_COST_PER_M = 0.79
 
-out = []
-total_latency = 0.0
-total_estimated_cost = 0.0
+async def evaluate_all_cases() -> EvaluationSummary:
+    out: list[EvaluationCaseResult] = []
+    total_latency = 0.0
+    total_estimated_cost = 0.0
 
-print(f"Starting performance & cost evaluation over {len(cases)} test cases...")
+    print(f"\n================================================================================")
+    print(f"PAPERLENS: END-TO-END PERFORMANCE, COST & RUNNING TIME BENCHMARK")
+    print(f"Evaluating {len(cases)} diverse scientific research paper benchmarks...")
+    print(f"================================================================================\n")
 
-for c in cases:
-    payload = json.dumps({"title": c["title"], "text": c["text"]}).encode()
-    req = urllib.request.Request(API, data=payload, headers={"Content-Type": "application/json"})
-    start = time.perf_counter()
-    try:
-        with urllib.request.urlopen(req, timeout=120) as r:
-            d = json.loads(r.read().decode("utf-8"))
-        elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
-        total_latency += elapsed_ms
-        
-        # Token & cost estimates based on paper size, prompts and outputs
-        approx_input_tokens = len(c["text"]) // 4 + 1500  # text + multi-agent system prompts
-        approx_output_tokens = 900  # specialist notes + critique + summary
-        estimated_cost_usd = round(
-            (approx_input_tokens * INPUT_COST_PER_M / 1_000_000) + 
-            (approx_output_tokens * OUTPUT_COST_PER_M / 1_000_000), 
-            6
-        )
-        total_estimated_cost += estimated_cost_usd
+    for idx, c in enumerate(cases, 1):
+        print(f"[{idx}/{len(cases)}] Benchmarking case '{c['id']}': {c['title'][:45]}...")
+        start = time.perf_counter()
+        try:
+            report = await run_review(c["title"], c["text"])
+            elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+            running_time_s = round(elapsed_ms / 1000, 2)
+            total_latency += elapsed_ms
 
-        out.append({
-            "id": c["id"],
-            "title": c["title"],
-            "latency_ms": elapsed_ms,
-            "running_time_seconds": round(elapsed_ms / 1000, 2),
-            "novelty_score": d.get("novelty_score"),
-            "feasibility_score": d.get("feasibility_score"),
-            "evidence_coverage": d.get("evidence_coverage"),
-            "sources_retrieved": len(d.get("sources", [])),
-            "findings_count": len(d.get("findings", [])),
-            "estimated_tokens": approx_input_tokens + approx_output_tokens,
-            "estimated_cost_usd": estimated_cost_usd,
-            "mode": d.get("execution_mode")
-        })
-    except Exception as e:
-        out.append({"id": c["id"], "error": str(e)})
+            # Token & cost estimation based on input size, system prompts, and multi-agent outputs
+            approx_input_tokens = len(c["text"]) // 4 + 1800  # text + multi-agent system instructions
+            approx_output_tokens = 950  # specialist notes + critique + summary
+            estimated_cost_usd = round(
+                (approx_input_tokens * INPUT_COST_PER_M / 1_000_000) + 
+                (approx_output_tokens * OUTPUT_COST_PER_M / 1_000_000), 
+                6
+            )
+            total_estimated_cost += estimated_cost_usd
 
-summary = {
-    "total_cases_evaluated": len(out),
-    "average_latency_ms": round(total_latency / max(1, len(out)), 2),
-    "average_running_time_s": round(total_latency / max(1, len(out)) / 1000, 2),
-    "total_estimated_cost_usd": round(total_estimated_cost, 6),
-    "average_cost_per_review_usd": round(total_estimated_cost / max(1, len(out)), 6),
-    "results": out
-}
+            passed_guardrails = sum(1 for g in report.guardrail_audits if g.status == "PASSED")
 
-print(json.dumps(summary, indent=2))
+            case_res = EvaluationCaseResult(
+                id=c["id"],
+                title=c["title"],
+                latency_ms=elapsed_ms,
+                running_time_seconds=running_time_s,
+                novelty_score=report.novelty_score,
+                feasibility_score=report.feasibility_score,
+                evidence_coverage=report.evidence_coverage,
+                sources_retrieved=len(report.sources),
+                findings_count=len(report.findings),
+                estimated_tokens=approx_input_tokens + approx_output_tokens,
+                estimated_cost_usd=estimated_cost_usd,
+                guardrails_passed=passed_guardrails,
+                mode=report.execution_mode
+            )
+            out.append(case_res)
+            print(f"       ✓ Completed in {running_time_s}s ({elapsed_ms} ms) | Est. Cost: ${estimated_cost_usd} | Guardrails: {passed_guardrails}/{len(report.guardrail_audits)} Passed")
+        except Exception as e:
+            print(f"       ✗ Error evaluating {c['id']}: {e}")
+
+    summary = EvaluationSummary(
+        total_cases_evaluated=len(out),
+        average_latency_ms=round(total_latency / max(1, len(out)), 2),
+        average_running_time_s=round(total_latency / max(1, len(out)) / 1000, 2),
+        total_estimated_cost_usd=round(total_estimated_cost, 6),
+        average_cost_per_review_usd=round(total_estimated_cost / max(1, len(out)), 6),
+        results=out
+    )
+
+    print(f"\n================================================================================")
+    print(f"BENCHMARK SUMMARY RESULTS:")
+    print(f"• Total Cases Evaluated   : {summary.total_cases_evaluated}")
+    print(f"• Average Running Time    : {summary.average_running_time_s} seconds ({summary.average_latency_ms} ms)")
+    print(f"• Total Estimated Cost    : ${summary.total_estimated_cost_usd:.6f} USD")
+    print(f"• Average Cost per Review : ${summary.average_cost_per_review_usd:.6f} USD")
+    print(f"================================================================================\n")
+
+    return summary
+
+if __name__ == "__main__":
+    summary = asyncio.run(evaluate_all_cases())
+    print(summary.model_dump_json(indent=2))

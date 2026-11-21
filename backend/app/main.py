@@ -4,8 +4,22 @@ try:
 except Exception:
     pass
 
-import os
+import os, sys, tempfile, pathlib
 os.environ["PYTHONHTTPSVERIFY"] = "0"
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+os.environ["CREWAI_TELEMETRY_OPT_OUT"] = "true"
+os.environ["OTEL_SDK_DISABLED"] = "true"
+
+# Prevent CrewAI from attempting to write credentials to forbidden AppData folder on Windows:
+try:
+    from crewai_core import token_manager
+    def _safe_storage_path() -> pathlib.Path:
+        p = pathlib.Path(tempfile.gettempdir()) / "crewai_storage"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    token_manager.TokenManager._get_secure_storage_path = staticmethod(_safe_storage_path)
+except Exception:
+    pass
 
 try:
     import litellm
@@ -19,13 +33,17 @@ import pdfplumber
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
-from .schemas import PaperInput, ReviewReport, ChatRequest, ChatResponse
+from .schemas import (
+    PaperInput, ReviewReport, ChatRequest, ChatResponse,
+    McpInvokeRequest, McpInvokeResponse, EvaluationSummary
+)
 from .guardrails import validate_paper_text
 from .pipeline import run_review
 from .chat import handle_paper_chat
+from .mcp_client import call_mcp_tool
 from .a2a import router as a2a_router
 
-app = FastAPI(title="PaperLens API", version="0.1.0")
+app = FastAPI(title="PaperLens API", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[x.strip() for x in settings.cors_origins.split(",")],
@@ -40,7 +58,10 @@ def health():
     return {
         "status": "ok",
         "service": "paperlens-api",
-        "mode": "live_llm" if settings.groq_api_key else "demo_fallback"
+        "mode": "live_llm" if settings.groq_api_key else "demo_fallback",
+        "frameworks": ["CrewAI", "Google ADK"],
+        "protocols": ["Model Context Protocol (JSON-RPC 2.0)", "A2A Protocol (JSON-RPC 2.0)"],
+        "guardrail_layers": 4
     }
 
 @app.post("/api/review", response_model=ReviewReport)
@@ -65,3 +86,13 @@ async def review_pdf(file: UploadFile = File(...)):
 async def chat_with_paper(payload: ChatRequest):
     return await handle_paper_chat(payload)
 
+@app.post("/api/mcp/invoke", response_model=McpInvokeResponse)
+async def invoke_mcp_tool(payload: McpInvokeRequest):
+    result, invocation = await call_mcp_tool(payload.tool_name, payload.arguments, payload.calling_agent)
+    return McpInvokeResponse(invocation=invocation, result=result)
+
+@app.get("/api/evaluation", response_model=EvaluationSummary)
+async def get_evaluation_metrics():
+    """Run end-to-end performance evaluation, latency, running time, and cost estimates."""
+    from ..evaluation.run_eval import evaluate_all_cases
+    return await evaluate_all_cases()

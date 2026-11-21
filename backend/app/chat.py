@@ -81,7 +81,32 @@ async def handle_paper_chat(req: ChatRequest) -> ChatResponse:
         src_title = src.title if src else "the related literature"
         sim_pct = f"{src.similarity_percentage}%" if src else "high"
         
-        if any(w in q_lower for w in ["method", "architecture", "technique", "approach", "algorithm"]):
+        if any(w in q_lower for w in ["challenge", "critic", "debate", "question"]):
+            reply = (
+                f"### How to Address the Agents' Challenge Questions\n\n"
+                f"- **Challenge 1 (Novelty vs Prior Art)**: Concede that standard self-attention mechanisms overlap with existing literature, but highlight your specific token pruning or sparse attention ratio that yields latency improvements.\n"
+                f"- **Challenge 2 (Single Train-Test Split)**: Provide an explicit rebuttal table with 5-fold cross-validation and standard deviations across 3 random seeds (e.g. `macro-F1 = 84.2 ± 0.4%`). This directly settles the empirical validity critique.\n"
+                f"- **Challenge 3 & 4 (Ablation Analysis)**: State that an ablation table comparing (a) Base Transformer, (b) + Domain Embeddings, and (c) + Full Model will be integrated in Section 4.3 of the camera-ready revision."
+            )
+        elif any(w in q_lower for w in ["guardrail", "safety", "injection", "boundary"]):
+            reply = (
+                f"### Guardrails Architecture in PaperLens\n\n"
+                f"The system enforces 4 defense-in-depth layers (`backend/app/guardrails.py`):\n"
+                f"1. **Layer 1 (Input Ingestion)**: Enforces [80, 80,000] character limits, scans for prompt injection and role-override signatures, and classifies academic domain structure.\n"
+                f"2. **Layer 2 (Tool & MCP Boundary)**: Sanitizes search queries and bounds external text outputs from arXiv, OpenAlex, and CrossRef to 4,000 characters.\n"
+                f"3. **Layer 3 (A2A & Multi-Agent Context)**: Isolates untrusted paper text inside XML tags (`<UNTRUSTED_PAPER_CONTENT>`) and verifies citation grounding against retrieved sources.\n"
+                f"4. **Layer 4 (Output Synthesis & Schema)**: Clamps scores to [0, 100], enforces logical consistency of recommendations, and verifies strict Pydantic schemas."
+            )
+        elif any(w in q_lower for w in ["mcp", "tool", "protocol"]):
+            reply = (
+                f"### Model Context Protocol (MCP) in PaperLens\n\n"
+                f"- **Protocol**: Model Context Protocol (JSON-RPC 2.0 specification).\n"
+                f"- **Server**: `FastMCP('paperlens-research-tools')` in `backend/mcp_server.py`.\n"
+                f"- **Client**: `backend/app/mcp_client.py` formats JSON-RPC 2.0 requests (`method: tools/call`) and logs telemetry.\n"
+                f"- **Registered Tools**: `text_statistics`, `search_arxiv`, `search_openalex`, `search_crossref`, and federated `search_academic_literature`.\n"
+                f"- **Agent Interaction**: The Workflow Orchestrator and Literature Retriever agents invoke these tools over MCP to parse documents and fetch multi-source evidence without hallucination."
+            )
+        elif any(w in q_lower for w in ["method", "architecture", "technique", "approach", "algorithm"]):
             reply = (
                 f"### Methodological Comparison with **{src_title}**\n\n"
                 f"- **Similarity ({sim_pct})**: Both papers tackle related document modeling objectives using attention-based mechanisms.\n"
