@@ -797,6 +797,198 @@ async def search_similar_papers(idea_analysis: IdeaAnalysis, idea_text: str) -> 
 # 6. DYNAMIC RESEARCH NOVELTY ASSESSMENT & GAP IDENTIFICATION
 # ------------------------------------------------------------------------------
 
+DOMAIN_SPECIFIC_BENCHMARKS = {
+    "Natural Language Processing & LLMs": {
+        "benchmarks": "standard suites like MMLU, GSM8K, and domain-specific benchmarks rather than legacy GLUE/SST tasks",
+        "metrics": "perplexity, task-specific macro-F1, reasoning accuracy, and inference latency (tokens/sec)",
+        "ablation_focus": "attention layer sparsity, context window length scaling, and parameter efficiency (PEFT / LoRA)",
+        "failure_modes": "hallucination under counterfactual prompts, sensitivity to prompt templates, and data contamination",
+        "venues": "ACL, EMNLP, NAACL, or NeurIPS (NLP track)"
+    },
+    "Computer Vision & Multimodal AI": {
+        "benchmarks": "demanding multi-class real-world datasets with variable illumination, occlusions, and camera noise",
+        "metrics": "mAP@0.5:0.95, IoU, inference FPS, and parameter-to-accuracy trade-offs",
+        "ablation_focus": "patch resolution scaling, cross-attention alignment layers, and backbone depth",
+        "failure_modes": "out-of-distribution blur/noise perturbations, small-object detection degradation, and adversarial examples",
+        "venues": "CVPR, ICCV, ECCV, or NeurIPS (Vision track)"
+    },
+    "Biomedical, Healthcare & Oncology": {
+        "benchmarks": "multi-center patient cohorts or public clinical databases (e.g., MIMIC-IV, TCGA, UK Biobank, OASIS)",
+        "metrics": "AUROC, sensitivity at 95% specificity, Brier calibration score, and decision curve net benefit",
+        "ablation_focus": "demographic confounding factors, class imbalance mitigation, and feature attribution interpretability",
+        "failure_modes": "high-confidence false negatives on minority demographics, distribution shifts across scanner manufacturers, and missing clinical modalities",
+        "venues": "MICCAI, Nature Medicine, IEEE JBHI, or Lancet Digital Health"
+    },
+    "Distributed Systems, Edge Computing & IoT": {
+        "benchmarks": "heterogeneous embedded hardware testbeds (e.g., Jetson Orin, Raspberry Pi 4, ESP32) under variable wireless link quality",
+        "metrics": "round-trip latency (p95/p99), communication bandwidth consumed per round (MB), and energy draw (Joules/task)",
+        "ablation_focus": "model quantization (INT8/FP16), packet compression schemes, and consensus protocol message overhead",
+        "failure_modes": "high-jitter wireless connectivity, intermittent client dropouts, Byzantine device poisoning, and straggler node bottlenecks",
+        "venues": "IEEE INFOCOM, ACM SenSys, ACM MobiCom, or IEEE IoT-J"
+    },
+    "Robotics, Autonomous Systems & RL": {
+        "benchmarks": "high-fidelity physics simulations (e.g., Isaac Gym, MuJoCo, PyBullet) followed by real-world physical testbed deployment",
+        "metrics": "policy success rate under disturbance, sample efficiency (timesteps to convergence), and control frequency (Hz)",
+        "ablation_focus": "reward function components, discount factor (gamma) decay, and sensor fusion temporal alignment",
+        "failure_modes": "sim-to-real domain gap, actuator saturation, unexpected physical collisions, and state estimation drift",
+        "venues": "ICRA, IROS, RSS, or CoRL"
+    },
+    "Information Retrieval & Graph Neural Networks": {
+        "benchmarks": "large-scale heterogeneous and temporal graph benchmarks (e.g., OGB, MS MARCO, BEIR)",
+        "metrics": "NDCG@10, MRR, HitRate@K, and wall-clock graph neighborhood sampling time",
+        "ablation_focus": "message-passing aggregation depth, graph over-smoothing mitigation, and negative sampling ratios",
+        "failure_modes": "vulnerability to adversarial edge perturbations, cold-start unlinked nodes, and extreme power-law degree skews",
+        "venues": "ACM SIGIR, The Web Conference (WWW), KDD, or WSDM"
+    },
+    "Quantum Computing & Cryptography": {
+        "benchmarks": "realistic NISQ noise simulation frameworks with decoherence (T1/T2 relaxation), gate fidelity errors, and fiber attenuation models",
+        "metrics": "secret key rate (SKR) vs transmission distance (dB), quantum bit error rate (QBER), and circuit depth",
+        "ablation_focus": "intensity pulse calibration (signal, decoy, vacuum states), detector dead-time effects, and phase randomization",
+        "failure_modes": "photon number splitting (PNS) attacks, detector blinding/saturation attacks, and phase drift in uncalibrated fiber interferometers",
+        "venues": "Physical Review Letters, IEEE QCE, Nature Quantum Information, or ACM CCS (Quantum track)"
+    },
+    "Cybersecurity, Privacy & Blockchain": {
+        "benchmarks": "synthetic and historical intrusion traces, dynamic malware sandboxes, and formal verification solvers",
+        "metrics": "false positive rate at 99% detection, attack mitigation latency, zero-knowledge proof generation time (s), and gas verification costs",
+        "ablation_focus": "adversarial training loss weightings, privacy budget epsilon allocation (in differential privacy), and protocol serialization overhead",
+        "failure_modes": "adaptive adversarial evasion, front-running / MEV extraction, sybil consensus poisoning, and timing side-channel leakage",
+        "venues": "IEEE S&P (Oakland), ACM CCS, USENIX Security, or NDSS"
+    },
+    "Renewable Energy & Climate Informatics": {
+        "benchmarks": "multi-year meteorological observation datasets (e.g., ERA5, NOAA, regional power grid operator SCADA logs)",
+        "metrics": "RMSE, MAE, Mean Absolute Scaled Error (MASE), and economic grid dispatch cost savings",
+        "ablation_focus": "spatial convolution vs temporal attention layers across short-term (1h) and day-ahead (24h) horizons",
+        "failure_modes": "sudden extreme ramp events (gusts, cloud occlusion), sensor calibration drift, and severe climate anomalies",
+        "venues": "Applied Energy, IEEE Transactions on Power Systems, or ACM e-Energy"
+    }
+}
+
+def generate_actionable_recommendations(
+    analysis: IdeaAnalysis,
+    similar_papers: list[SimilarPaper],
+    category: str,
+    top_similarity: int
+) -> list[str]:
+    """Generate 5 distinct, highly contextualized actionable recommendations."""
+    top_p = similar_papers[0] if similar_papers else None
+    top_title = top_p.title if top_p else "prior foundational work"
+    top_author = top_p.authors[0] if top_p and top_p.authors else "Prior researchers"
+    top_venue = top_p.venue if top_p and top_p.venue else "academic literature"
+    
+    kws = analysis.important_keywords
+    kw0 = kws[0] if kws else "the primary concept"
+    kw1 = kws[1] if len(kws) > 1 else "the methodology"
+    kw2 = kws[2] if len(kws) > 2 else "benchmarking"
+    tech0 = analysis.key_concepts_and_technologies[0] if analysis.key_concepts_and_technologies else "the core algorithm"
+    tech1 = analysis.key_concepts_and_technologies[1] if len(analysis.key_concepts_and_technologies) > 1 else "empirical ablation"
+    
+    domain_info = DOMAIN_SPECIFIC_BENCHMARKS.get(
+        analysis.research_domain,
+        {
+            "benchmarks": "standard domain-specific benchmarking suites and publicly audited baseline repositories",
+            "metrics": "standard statistical metrics, error margins, and computational complexity bounds",
+            "ablation_focus": "individual component contributions, hyperparameter sensitivity, and modular ablated variants",
+            "failure_modes": "distribution shifts, adversarial edge cases, and high-noise boundary conditions",
+            "venues": "top-tier IEEE, ACM, or domain-specific conferences"
+        }
+    )
+
+    recs = []
+
+    # Recommendation 1: Strategic Differentiation from Prior Art (Category-Driven)
+    if category == "Highly Explored":
+        recs.append(
+            f"**Target an Orthogonal Problem Niche:** Because '{top_title}' by {top_author} ({top_venue}) already investigates {kw0} with {top_similarity}% topical overlap, avoid proposing another incremental adaptation. Instead, narrow your scope to a high-friction bottleneck where their approach struggles—such as {domain_info['failure_modes']} or strict computational runtime constraints."
+        )
+    elif category == "Partially Explored":
+        recs.append(
+            f"**Isolate Your Architectural Pivot:** Similar research exists in {analysis.research_domain} (notably '{top_title}'), but your synthesis of {kw0} with {kw1} is distinct. Explicitly dedicate Section 1 of your paper to contrasting your assumptions against {top_author}'s framework, demonstrating why your combination of {tech0} yields properties unattainable by their method alone."
+        )
+    elif category == "Limited Existing Research":
+        recs.append(
+            f"**Establish the Foundational Problem Taxonomy:** Since only a limited body of academic literature exists at the intersection of {kw0} and {kw1}, your paper has an opportunity to define the standard problem formulation. Formalize mathematical definitions, boundary constraints, and a taxonomy for {tech0} in {analysis.research_domain} so future researchers cite your work as the foundational baseline."
+        )
+    else:  # Potentially Novel
+        recs.append(
+            f"**Ground Your Novel Hypothesis in Established Principles:** Because the search identified no close matches for your specific formulation, reviewers may exhibit skepticism regarding theoretical feasibility. Ground your claims by drawing explicit analogies to proven mechanisms in adjacent {analysis.research_domain} literature and construct a compact mathematical justification demonstrating why {kw0} should work."
+        )
+
+    # Recommendation 2: Component Ablation & Methodological Rigor
+    recs.append(
+        f"**Construct an Exhaustive Component Ablation Matrix:** Systematically isolate each element in your proposed pipeline ({tech0} vs {tech1}). Design ablation trials isolating {domain_info['ablation_focus']}, proving to peer reviewers that your empirical gains stem directly from your novel formulation rather than hyperparameter tuning or baseline dataset artifacts."
+    )
+
+    # Recommendation 3: Domain-Specific Evaluation & Benchmarks
+    recs.append(
+        f"**Benchmark on Rigorous {analysis.research_domain} Standards:** Rather than evaluating solely on toy or synthetic setups, validate against {domain_info['benchmarks']}. Measure and report {domain_info['metrics']} across at least 3 distinct benchmark configurations to substantiate empirical generalizability."
+    )
+
+    # Recommendation 4: Stress-Testing & Failure-Mode Analysis
+    recs.append(
+        f"**Expose and Stress-Test Latent Failure Modes:** Conduct a proactive error analysis addressing {domain_info['failure_modes']}. Documenting the exact boundary conditions under which your proposed {kw0} framework degrades builds scientific credibility and protects your paper against fatal reviewer critiques."
+    )
+
+    # Recommendation 5: Publication & Reproducibility Strategy
+    recs.append(
+        f"**Publication Strategy & Open-Source Artifacts:** Target upcoming submission deadlines at venues like {domain_info['venues']}. Prepare an anonymized GitHub repository containing reproducible code, dockerized environment specs, dataset split scripts, and random seeds (reporting standard deviations over ≥ 3 runs) to maximize your acceptance probability."
+    )
+
+    return recs
+
+def generate_dynamic_research_gaps(
+    analysis: IdeaAnalysis,
+    similar_papers: list[SimilarPaper],
+    category: str
+) -> ResearchGap:
+    """Synthesize domain-tailored research gap analysis."""
+    top_p = similar_papers[0] if similar_papers else None
+    top_title = top_p.title if top_p else "prior foundational work"
+    top_author = top_p.authors[0] if top_p and top_p.authors else "Prior researchers"
+    
+    kws = analysis.important_keywords
+    kw0 = kws[0] if kws else "the primary concept"
+    kw1 = kws[1] if len(kws) > 1 else "the proposed framework"
+    tech0 = analysis.key_concepts_and_technologies[0] if analysis.key_concepts_and_technologies else "contemporary algorithms"
+    
+    domain_info = DOMAIN_SPECIFIC_BENCHMARKS.get(
+        analysis.research_domain,
+        {
+            "ablation_focus": "computational complexity and parameter efficiency",
+            "failure_modes": "distribution shifts and noise perturbations"
+        }
+    )
+    ablation_hint = domain_info.get("ablation_focus", "computational complexity and parameter efficiency")
+    failure_hint = domain_info.get("failure_modes", "distribution shifts and noise perturbations")
+    
+    covered_areas = [
+        f"Foundational formulations and baseline benchmarks established by {top_author} in '{top_title}'.",
+        f"Standard evaluation pipelines and legacy loss metrics conventionally applied to {kw0} in {analysis.research_domain}."
+    ]
+    
+    underexplored_areas = [
+        f"Extreme low-resource, sample-efficient, or real-time deployment of {kw0} under constrained compute.",
+        f"Robustness and degradation behavior under {failure_hint}.",
+        f"Systematic ablation isolating the specific mechanisms of {tech0} from baseline inductive biases."
+    ]
+    
+    suggested_directions = [
+        f"Formulate a direct head-to-head empirical comparison pitting your proposed approach against {top_author}'s published model.",
+        f"Investigate {ablation_hint} across diverse real-world benchmarks rather than isolated laboratory datasets.",
+        f"Establish formal mathematical guarantees or confidence interval bounds across multiple randomized experimental seeds."
+    ]
+    
+    differentiation_opportunities = [
+        f"Highlight specific architectural advantages in {kw1} that mitigate the performance bottlenecks observed in '{top_title}'.",
+        f"Demonstrate practical superiority in latency, parameter footprint, or sample efficiency to prove operational viability."
+    ]
+    
+    return ResearchGap(
+        covered_areas=covered_areas,
+        underexplored_areas=underexplored_areas,
+        suggested_directions=suggested_directions,
+        differentiation_opportunities=differentiation_opportunities
+    )
+
 def assess_novelty(
     analysis: IdeaAnalysis,
     similar_papers: list[SimilarPaper]
@@ -845,7 +1037,6 @@ def assess_novelty(
             f"The search found no sufficiently close matches in the indexed academic literature for your exact conceptual formulation. "
             f"While foundational principles exist in {analysis.research_domain}, this synthesis appears distinct based on retrieved studies."
         )
-        # Dynamic novelty score between 86 and 96 depending on proposal specificity
         specificity_adjustment = min(8, max(1, len(analysis.important_keywords)))
         base_novelty = max(86, min(96, int(round(98.0 - (top_similarity * 0.35) + (specificity_adjustment * 0.6)))))
 
@@ -897,35 +1088,11 @@ def assess_novelty(
         disclaimer=disclaimer
     )
 
-    # 3. Research Gap Identification citing retrieved papers
-    research_gaps = ResearchGap(
-        covered_areas=[
-            f"Canonical baselines and problem formulations explored by {top_author} in '{top_title}'.",
-            f"Standard benchmarking suites and validation datasets in {analysis.research_domain}."
-        ],
-        underexplored_areas=[
-            f"Sample-efficiency and extreme low-resource evaluation for {kw_0}.",
-            "Robustness against out-of-distribution domain shifts and adversarial perturbances.",
-            "Rigorous ablation isolating domain-specific representations from baseline inductive bias."
-        ],
-        suggested_directions=[
-            f"Formulate a head-to-head empirical comparison directly pitting your proposed methodology against '{top_title}'.",
-            "Introduce multi-seed variance reporting and 5-fold cross-validation to establish statistical significance.",
-            "Publish an open-source reproducible pipeline and standardized benchmarking splits."
-        ],
-        differentiation_opportunities=[
-            f"Emphasize parameter-efficient adaptations or runtime latency reduction to demonstrate practical deployment superiority.",
-            "Investigate theoretical interpretability alongside empirical performance gains."
-        ]
-    )
+    # 3. Dynamic Research Gap Identification
+    research_gaps = generate_dynamic_research_gaps(analysis, similar_papers, category)
 
-    # 4. Actionable Recommendations
-    recommendations = [
-        f"Differentiate from '{top_title}' by clearly stating your distinct architectural assumptions and boundary conditions in Section 1.",
-        "Construct a dedicated ablation matrix isolating the contribution of each individual component in your proposed methodology.",
-        "Report confidence intervals (p-values, standard deviations over >= 3 random seeds) to prove empirical superiority over chance.",
-        f"Conduct a preliminary pilot experiment on standard {analysis.research_domain} benchmarks to substantiate claims before full manuscript drafting."
-    ]
+    # 4. Dynamic Actionable Recommendations
+    recommendations = generate_actionable_recommendations(analysis, similar_papers, category, top_similarity)
 
     return assessment, research_gaps, recommendations
 

@@ -1797,12 +1797,26 @@ export default function App() {
                   </div>
 
                   <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {ideaReport.recommendations.map((rec, i) => (
-                      <div key={i} className="rec-item">
-                        <div className="rec-num">{i + 1}</div>
-                        <p className="rec-text">{rec}</p>
-                      </div>
-                    ))}
+                    {ideaReport.recommendations.map((rec, i) => {
+                      const match = rec.match(/^\*\*(.*?)\*\*:?\s*(.*)$/);
+                      if (match) {
+                        return (
+                          <div key={i} className="rec-item">
+                            <div className="rec-num">{i + 1}</div>
+                            <p className="rec-text">
+                              <strong style={{ color: "#e2ecf9", fontWeight: 700 }}>{match[1]}: </strong>
+                              {match[2]}
+                            </p>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={i} className="rec-item">
+                          <div className="rec-num">{i + 1}</div>
+                          <p className="rec-text">{rec}</p>
+                        </div>
+                      );
+                    })}
                   </div>
                 </section>
               </div>
