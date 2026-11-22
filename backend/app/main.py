@@ -35,13 +35,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .schemas import (
     PaperInput, ReviewReport, ChatRequest, ChatResponse,
-    McpInvokeRequest, McpInvokeResponse, EvaluationSummary
+    McpInvokeRequest, McpInvokeResponse, EvaluationSummary,
+    IdeaInput, IdeaNoveltyReport
 )
 from .guardrails import validate_paper_text
 from .pipeline import run_review
 from .chat import handle_paper_chat
 from .mcp_client import call_mcp_tool
 from .a2a import router as a2a_router
+from .idea_checker import check_research_idea_novelty, extract_text_from_file
 
 app = FastAPI(title="PaperLens API", version="0.2.0")
 app.add_middleware(
@@ -96,3 +98,34 @@ async def get_evaluation_metrics():
     """Run end-to-end performance evaluation, latency, running time, and cost estimates."""
     from ..evaluation.run_eval import evaluate_all_cases
     return await evaluate_all_cases()
+
+# --- Feature: Research Idea Novelty Checker Endpoints ---
+
+@app.post("/api/idea/check", response_model=IdeaNoveltyReport)
+async def check_idea(payload: IdeaInput):
+    clean_text = payload.idea_text.strip()
+    if len(clean_text) < 20:
+        raise HTTPException(422, "Please describe your research idea in at least 20 characters.")
+    return await check_research_idea_novelty(payload.title, clean_text)
+
+@app.post("/api/idea/check/file", response_model=IdeaNoveltyReport)
+async def check_idea_file(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(400, "No file uploaded.")
+    fn = file.filename.lower()
+    if not (fn.endswith(".pdf") or fn.endswith(".docx")):
+        raise HTTPException(415, "Unsupported file format. Please upload a .pdf or .docx document.")
+    data = await file.read(settings.max_upload_mb * 1024 * 1024 + 1)
+    if len(data) > settings.max_upload_mb * 1024 * 1024:
+        raise HTTPException(413, f"File exceeds the maximum upload limit ({settings.max_upload_mb} MB).")
+    try:
+        text = extract_text_from_file(data, file.filename)
+    except Exception as exc:
+        raise HTTPException(422, f"Could not extract text: {exc}")
+    
+    if len(text.strip()) < 20:
+        raise HTTPException(422, "Uploaded document contains insufficient extractable text (minimum 20 characters).")
+        
+    title = file.filename.rsplit(".", 1)[0].replace("_", " ").replace("-", " ").title()
+    return await check_research_idea_novelty(title, text)
+

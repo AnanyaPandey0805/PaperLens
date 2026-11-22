@@ -42,6 +42,12 @@
 7. **End-to-End Evaluation & Cost Estimation**:
    - Benchmark evaluation across scientific papers with latency (ms), running time (s), token consumption, and cost estimates ($0.59 / 1M in, $0.79 / 1M out).
 
+8. **Research Idea Novelty Checker ("Check Research Idea")**:
+   - Allows researchers to submit an idea via direct text input or document upload (**PDF** and **DOCX** supported).
+   - Automatically deconstructs the research concept: problem statement, objectives, proposed methodology, key technologies, research domain, and important keywords.
+   - Cross-references against authentic academic literature across **arXiv**, **OpenAlex**, and **CrossRef** with direct paper links.
+   - Delivers a comprehensive **5-Section Results Dashboard**: Idea Overview, Novelty Assessment (with 0-100 Score and 4-tier exploration category), Similar Papers, Research Gap Mapping, and Actionable Recommendations.
+
 ---
 
 ## 📋 Evaluation Requirements Mapping (10/10)

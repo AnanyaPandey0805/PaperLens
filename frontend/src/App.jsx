@@ -4,18 +4,40 @@ import {
   Clock3, Gauge, Search, Activity, Layers3, ChevronRight, ArrowUpRight,
   LoaderCircle, CheckCircle2, X, FlaskConical, Menu, Workflow, Bot,
   MessageSquare, Send, AlertTriangle, Terminal, Code2, Play, RefreshCw,
-  UserCheck, CheckCircle, ShieldAlert, Cpu, Database, DollarSign, Table
+  UserCheck, CheckCircle, ShieldAlert, Cpu, Database, DollarSign, Table,
+  Lightbulb, ExternalLink, Compass, Target
 } from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 const sample = `Abstract. We propose a lightweight transformer-based approach for scientific document classification. We evaluate on a public dataset of 2,400 abstracts and compare against TF-IDF and a pretrained transformer. The proposed model achieves 4.2% higher macro-F1 than TF-IDF, but only a 0.6% gain over the pretrained transformer. We use a single train-test split and do not report confidence intervals or multiple random seeds. The dataset contains computer science papers from 2019 to 2023. We do not include an ablation study to isolate the contribution of domain-specific embeddings. Methods. The dataset is split into 80% training and 20% testing. We use Adam with learning rate 0.0001 for 10 epochs. Limitations. Our study lacks external validation and ablation analysis.`;
 
+const sampleIdea = `Research Question & Hypothesis:
+Can we develop an adaptive sparse attention mechanism for Vision Transformers deployed on resource-constrained edge IoT devices (e.g. Raspberry Pi 4 and NVIDIA Jetson Nano)?
+
+Proposed Methodology:
+We formulate a dynamic token pruning layer conditioned on spatial entropy to prune redundant background patches before self-attention computation. We combine this with 8-bit post-training quantization and test classification on ImageNet-1K and real-time inference on edge hardware.
+
+Target Objectives & Expected Contributions:
+We hypothesize that over 45% of visual tokens can be skipped with less than 0.8% degradation in top-1 accuracy, achieving a 2.3x speedup in wall-clock inference time while guaranteeing memory bounds.`;
+
 function Badge({ children, tone = "" }) {
   return <span className={"badge " + tone}>{children}</span>;
 }
 
 export default function App() {
+  // Global Mode: "review" (Paper Review) | "idea" (Check Research Idea)
+  const [appMode, setAppMode] = useState("review");
+
+  // Research Idea Novelty Checker state
+  const [ideaTitle, setIdeaTitle] = useState("");
+  const [ideaText, setIdeaText] = useState("");
+  const [ideaFile, setIdeaFile] = useState(null);
+  const [ideaInputType, setIdeaInputType] = useState("text"); // "text" | "file"
+  const [ideaReport, setIdeaReport] = useState(null);
+  const [ideaBusy, setIdeaBusy] = useState(false);
+  const [ideaError, setIdeaError] = useState("");
+
   const [text, setText] = useState("");
   const [title, setTitle] = useState("");
   const [file, setFile] = useState(null);
@@ -50,6 +72,76 @@ export default function App() {
     "How do the agents interact with tools through MCP?",
     "Explain the A2A interoperability between CrewAI and ADK"
   ]);
+
+  async function submitIdea() {
+    setIdeaBusy(true); setIdeaError(""); setIdeaReport(null);
+    try {
+      let r;
+      if (ideaInputType === "file") {
+        if (!ideaFile) throw Error("Please select a .pdf or .docx file to upload.");
+        let f = new FormData();
+        f.append("file", ideaFile);
+        r = await fetch(API + "/api/idea/check/file", { method: "POST", body: f });
+      } else {
+        if (!ideaText.trim() || ideaText.trim().length < 20) {
+          throw Error("Please provide at least 20 characters describing your research idea.");
+        }
+        r = await fetch(API + "/api/idea/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: ideaTitle || "Proposed Research Idea", idea_text: ideaText })
+        });
+      }
+      let d = await r.json();
+      if (!r.ok) throw Error(d.detail || "Novelty analysis failed");
+      setIdeaReport(d);
+    } catch (e) {
+      setIdeaError(e.message + " — ensure the API is running at " + API);
+    } finally {
+      setIdeaBusy(false);
+    }
+  }
+
+  function resetIdea() {
+    setIdeaReport(null);
+    setIdeaTitle("");
+    setIdeaText("");
+    setIdeaFile(null);
+    setIdeaError("");
+  }
+
+  function exportIdeaMarkdown() {
+    if (!ideaReport) return;
+    let md = `# Research Idea Novelty Assessment Report\n\n`;
+    md += `**Report ID**: ${ideaReport.report_id} | **Date**: ${ideaReport.timestamp}\n`;
+    md += `**Research Domain**: ${ideaReport.analysis.research_domain}\n`;
+    md += `**Novelty Category**: ${ideaReport.assessment.category} (${ideaReport.assessment.novelty_score}/100)\n\n`;
+    md += `## 1. Idea Overview\n`;
+    md += `**Identified Problem**: ${ideaReport.analysis.problem_statement}\n\n`;
+    md += `**Primary Objectives**:\n`;
+    for (const obj of ideaReport.analysis.research_objectives) md += `- ${obj}\n`;
+    md += `\n**Proposed Methodology**: ${ideaReport.analysis.proposed_methodology}\n`;
+    md += `**Keywords**: ${ideaReport.analysis.important_keywords.join(", ")}\n\n`;
+    md += `## 2. Novelty Assessment\n`;
+    md += `${ideaReport.assessment.explanation}\n\n`;
+    md += `> **Academic Disclaimer**: ${ideaReport.assessment.disclaimer}\n\n`;
+    md += `## 3. Similar Academic Papers\n\n`;
+    for (const p of ideaReport.similar_papers) {
+      md += `### ${p.title} (${p.year || "n.d."}) — ${p.similarity_percentage}% Similarity\n`;
+      md += `- **Authors**: ${p.authors.join(", ")}\n`;
+      md += `- **Venue**: ${p.venue || "Academic Publication"} | **URL**: ${p.url}\n`;
+      md += `- **Overlap**: ${p.overlap_summary}\n\n`;
+    }
+    md += `## 4. Research Gaps & Directions\n`;
+    md += `### Underexplored Areas\n`;
+    for (const u of ideaReport.research_gaps.underexplored_areas) md += `- ${u}\n`;
+    md += `\n### Suggested Directions\n`;
+    for (const s of ideaReport.research_gaps.suggested_directions) md += `- ${s}\n`;
+    md += `\n## 5. Actionable Recommendations\n`;
+    for (const rec of ideaReport.recommendations) md += `- ${rec}\n`;
+    navigator.clipboard?.writeText(md);
+    alert("Research Idea Novelty Report copied to clipboard in Markdown format!");
+  }
 
   async function submit() {
     setBusy(true); setError(""); setReport(null);
@@ -228,14 +320,28 @@ export default function App() {
           </div>
           <ChevronRight size={15} />
         </div>
-        <div className="muted label">10 EVALUATION CRITERIA</div>
-        <div className="nav active"><Layers3 /> 1. Paper Review <span className="dot" /></div>
-        <div className="nav" onClick={() => setTab("Agent Debate & Challenges")}><MessageSquare /> 2. Challenge Debate</div>
-        <div className="nav" onClick={() => setTab("Context & State Updates")}><Database /> 3. State & Context Sharing</div>
-        <div className="nav" onClick={() => setTab("MCP Tools & Protocol")}><Terminal /> 4. MCP Tools (2+ tools)</div>
-        <div className="nav" onClick={() => setTab("Guardrails & Security")}><ShieldCheck /> 5. 4-Layer Guardrails</div>
-        <div className="nav" onClick={() => setTab("A2A Inter-Agent Protocol")}><Workflow /> 6. A2A (CrewAI + ADK)</div>
-        <div className="nav" onClick={() => setTab("Evaluation & Cost")}><DollarSign /> 7. Evaluation & Cost</div>
+
+        <div className="muted label">SYSTEM MODULES</div>
+        <div className={"nav " + (appMode === "review" ? "active" : "")} onClick={() => setAppMode("review")}>
+          <Layers3 /> Paper Review {appMode === "review" && <span className="dot" />}
+        </div>
+        <div className={"nav " + (appMode === "idea" ? "active" : "")} onClick={() => setAppMode("idea")}>
+          <Lightbulb /> Check Research Idea {appMode === "idea" && <span className="dot" />}
+        </div>
+
+        {appMode === "review" && (
+          <>
+            <div className="muted label" style={{ marginTop: "12px" }}>10 EVALUATION CRITERIA</div>
+            <div className={"nav " + (tab === "Findings" ? "active" : "")} onClick={() => setTab("Findings")}><Layers3 /> 1. Paper Review</div>
+            <div className={"nav " + (tab === "Agent Debate & Challenges" ? "active" : "")} onClick={() => setTab("Agent Debate & Challenges")}><MessageSquare /> 2. Challenge Debate</div>
+            <div className={"nav " + (tab === "Context & State Updates" ? "active" : "")} onClick={() => setTab("Context & State Updates")}><Database /> 3. State & Context Sharing</div>
+            <div className={"nav " + (tab === "MCP Tools & Protocol" ? "active" : "")} onClick={() => setTab("MCP Tools & Protocol")}><Terminal /> 4. MCP Tools (2+ tools)</div>
+            <div className={"nav " + (tab === "Guardrails & Security" ? "active" : "")} onClick={() => setTab("Guardrails & Security")}><ShieldCheck /> 5. 4-Layer Guardrails</div>
+            <div className={"nav " + (tab === "A2A Inter-Agent Protocol" ? "active" : "")} onClick={() => setTab("A2A Inter-Agent Protocol")}><Workflow /> 6. A2A (CrewAI + ADK)</div>
+            <div className={"nav " + (tab === "Evaluation & Cost" ? "active" : "")} onClick={() => setTab("Evaluation & Cost")}><DollarSign /> 7. Evaluation & Cost</div>
+          </>
+        )}
+
         <div className="side-bottom">
           <div className="help">
             <ShieldCheck />
@@ -261,13 +367,32 @@ export default function App() {
           <button className="menu" onClick={() => setMenu(!menu)}><Menu /></button>
           <span>Workspace</span>
           <ChevronRight size={14} />
-          <b>Multi-Agent Peer Review Dashboard</b>
+          <b>{appMode === "review" ? "Multi-Agent Peer Review Dashboard" : "Research Idea Novelty Checker"}</b>
+
+          <div style={{ marginLeft: "18px" }}>
+            <div className="mode-toggle-bar">
+              <button
+                className={"mode-toggle-btn " + (appMode === "review" ? "active" : "")}
+                onClick={() => setAppMode("review")}
+              >
+                <Layers3 size={13} /> Paper Review
+              </button>
+              <button
+                className={"mode-toggle-btn " + (appMode === "idea" ? "active" : "")}
+                onClick={() => setAppMode("idea")}
+              >
+                <Lightbulb size={13} /> Check Research Idea
+              </button>
+            </div>
+          </div>
+
           <div className="push" />
           <span className="status-dot" />
-          <small>System Operational · MCP FastMCP · 4 Guardrail Layers</small>
+          <small>{appMode === "review" ? "System Operational · FastMCP · 4 Guardrail Layers" : "Academic Literature Search · arXiv · OpenAlex · CrossRef"}</small>
           <div className="top-avatar">P</div>
         </header>
 
+        {appMode === "review" && (
         <div className="content">
           <div className="heading">
             <div>
@@ -1242,6 +1367,453 @@ export default function App() {
             <span><i /> 10 Requirements Complete · CrewAI + ADK + FastMCP</span>
           </footer>
         </div>
+        )}
+
+        {/* Feature: Check Research Idea Section */}
+        {appMode === "idea" && (
+          <div className="content">
+            <div className="heading">
+              <div>
+                <div className="eyebrow">— DISCOVER PRIOR ART &amp; ASSESS ORIGINALITY</div>
+                <h1>Check research idea<span>.</span></h1>
+                <p>Submit your research question, methodology, or draft to investigate existing literature across arXiv, OpenAlex, and CrossRef.</p>
+              </div>
+              <button className="ghost" onClick={resetIdea}>
+                <RefreshCw size={14} /> New idea check
+              </button>
+            </div>
+
+            {/* Idea Submission Panel */}
+            {!ideaReport && (
+              <section className="panel">
+                <div className="panel-head">
+                  <div className="iconbox" style={{ background: "#17343b", color: "#6ee3cd", borderColor: "#2e6a62" }}>
+                    <Lightbulb />
+                  </div>
+                  <div className="headcopy">
+                    <h2>Submit Research Concept, Question, or Draft</h2>
+                    <p>Enter your idea as text or upload a proposal (.pdf or .docx) to cross-check against academic literature.</p>
+                  </div>
+                  <Badge tone="green">NOVELTY CHECKER</Badge>
+                </div>
+
+                {/* Input Type Selection */}
+                <div className="input-type-tabs">
+                  <button
+                    className={"input-type-tab " + (ideaInputType === "text" ? "active" : "")}
+                    onClick={() => setIdeaInputType("text")}
+                  >
+                    <FileText size={14} /> Text Input (Describe Concept)
+                  </button>
+                  <button
+                    className={"input-type-tab " + (ideaInputType === "file" ? "active" : "")}
+                    onClick={() => setIdeaInputType("file")}
+                  >
+                    <UploadCloud size={14} /> Document Upload (.pdf, .docx)
+                  </button>
+                </div>
+
+                {ideaInputType === "text" ? (
+                  <>
+                    <label className="fieldlabel">
+                      WORKING TITLE OR TOPIC <em>OPTIONAL</em>
+                      <input
+                        value={ideaTitle}
+                        onChange={e => setIdeaTitle(e.target.value)}
+                        placeholder="e.g. Adaptive Sparse Attention in Edge Vision Transformers"
+                      />
+                    </label>
+
+                    <div className="labelrow">
+                      <label className="fieldlabel" htmlFor="ideatext">RESEARCH IDEA &amp; METHODOLOGY DESCRIPTION</label>
+                      <button
+                        className="textbtn"
+                        onClick={() => {
+                          setIdeaTitle("Adaptive Sparse Attention in Edge Vision Transformers");
+                          setIdeaText(sampleIdea);
+                        }}
+                      >
+                        Load sample research idea
+                      </button>
+                    </div>
+
+                    <textarea
+                      id="ideatext"
+                      value={ideaText}
+                      onChange={e => setIdeaText(e.target.value)}
+                      rows={7}
+                      placeholder="Describe your research question, proposed methodology, problem statement, hypothesis, or complete research concept in detail (e.g. What problem are you solving? What models/techniques are you proposing? What are your expected contributions?)..."
+                    />
+
+                    <div className="textfoot">
+                      <span>{ideaText.length.toLocaleString()} characters · minimum 20</span>
+                      <span>Analyzes problem, objectives, proposed methods, technologies, domain &amp; contributions</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <label className="drop">
+                      <input
+                        type="file"
+                        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        onChange={e => {
+                          const f = e.target.files?.[0] || null;
+                          setIdeaFile(f);
+                          if (f) {
+                            setIdeaTitle(f.name.replace(/\.(pdf|docx)$/i, "").replace(/[-_]/g, " "));
+                          }
+                        }}
+                      />
+                      <UploadCloud size={28} />
+                      <b>{ideaFile ? ideaFile.name : "Drop your research proposal, draft, or abstract here"}</b>
+                      <small>{ideaFile ? "Selected: " + (ideaFile.size / 1048576).toFixed(2) + " MB" : "PDF and DOCX formats supported · Up to 12 MB"}</small>
+                      <span>{ideaFile ? "Change document" : "Browse files"}</span>
+                    </label>
+
+                    {ideaFile && (
+                      <div style={{ marginTop: "12px", display: "flex", alignItems: "center", gap: "8px", background: "#101b2c", padding: "10px 14px", borderRadius: "8px", border: "1px solid #273852", fontSize: "11px" }}>
+                        <CheckCircle size={15} style={{ color: "#52d7a6" }} />
+                        <span style={{ color: "#cfe0f7", fontWeight: 600 }}>Ready to analyze: {ideaFile.name}</span>
+                        <span style={{ marginLeft: "auto", color: "#8da0bc" }}>{(ideaFile.size / 1024).toFixed(0)} KB</span>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {ideaError && <div className="error"><X size={15} />{ideaError}</div>}
+
+                <div className="submitrow">
+                  <div className="privacy">
+                    <ShieldCheck size={16} /> Verifiable Academic Corpus <span>·</span> arXiv, OpenAlex &amp; CrossRef Cross-Check
+                  </div>
+                  <button
+                    className="primary"
+                    disabled={ideaBusy || (ideaInputType === "text" && ideaText.trim().length < 20) || (ideaInputType === "file" && !ideaFile)}
+                    onClick={submitIdea}
+                  >
+                    {ideaBusy ? (
+                      <><LoaderCircle className="spin" /> Investigating Academic Literature...</>
+                    ) : (
+                      <><Sparkles size={16} /> Check Idea Novelty <ArrowUpRight size={15} /></>
+                    )}
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {/* Idea Busy State */}
+            {ideaBusy && (
+              <section className="panel busy">
+                <LoaderCircle className="spin" size={28} />
+                <div>
+                  <h2>Analyzing research concept and querying academic databases</h2>
+                  <p>Extracting scientific dimensions, querying OpenAlex, Crossref &amp; arXiv, calculating semantic overlap, and mapping research gaps.</p>
+                  <div className="steps">
+                    1. Concept &amp; Domain Extraction　→　2. Multi-Source Literature Retrieval　→　3. Semantic Overlap Assessment　→　4. Research Gap Mapping &amp; Actionable Recommendations
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* Results Dashboard (5 Distinct Sections) */}
+            {ideaReport && (
+              <div className="idea-container">
+                {/* Result Header */}
+                <div className="resulthead">
+                  <div>
+                    <div className="eyebrow">— NOVELTY ASSESSMENT COMPLETE · ID #{ideaReport.report_id}</div>
+                    <h2>{ideaReport.title}</h2>
+                    <p>Analyzed in {ideaReport.execution_time_seconds}s across {ideaReport.total_papers_searched} indexed scientific works · {ideaReport.timestamp}</p>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    <button className="ghost" onClick={exportIdeaMarkdown}>
+                      <FileText size={14} /> Export Report (Markdown)
+                    </button>
+                    <button className="ghost" onClick={resetIdea}>
+                      <RefreshCw size={14} /> Check Another Idea
+                    </button>
+                  </div>
+                </div>
+
+                {/* SECTION 2: NOVELTY ASSESSMENT (Prominently showcased at top) */}
+                <section className="idea-section">
+                  <div className="idea-section-head">
+                    <div className="idea-section-icon green"><Target /></div>
+                    <div>
+                      <h3>Section 2: Novelty Assessment</h3>
+                      <p>Indicative originality evaluation and literature differentiation</p>
+                    </div>
+                    <Badge tone={
+                      ideaReport.assessment.category === "Potentially Novel" ? "green" :
+                      ideaReport.assessment.category === "Limited Existing Research" ? "green" :
+                      ideaReport.assessment.category === "Partially Explored" ? "amber" : "red"
+                    }>
+                      {ideaReport.assessment.category}
+                    </Badge>
+                  </div>
+
+                  <div className="novelty-score-banner">
+                    <div className={"novelty-score-circle " + (
+                      ideaReport.assessment.category === "Potentially Novel" ? "novel" :
+                      ideaReport.assessment.category === "Partially Explored" ? "partial" : "explored"
+                    )}>
+                      <small>NOVELTY SCORE</small>
+                      <b>{ideaReport.assessment.novelty_score}</b>
+                      <span>out of 100</span>
+                    </div>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+                        <span style={{ fontSize: "11px", color: "#8da1be", fontWeight: 700 }}>EXPLORATION STATUS:</span>
+                        <b style={{ fontSize: "16px", color: "#cfe0f7" }}>{ideaReport.assessment.category}</b>
+                      </div>
+                      <p style={{ fontSize: "11px", lineHeight: "1.75", color: "#b9cbdf", margin: "0 0 12px" }}>
+                        {ideaReport.assessment.explanation}
+                      </p>
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        {ideaReport.assessment.observations.map((obs, idx) => (
+                          <div key={idx} style={{ fontSize: "10px", background: "#0b1220", border: "1px solid #23354f", borderRadius: "6px", padding: "6px 10px", color: "#95a8c4" }}>
+                            • {obs}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Explored vs Distinctive Comparison */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "14px" }}>
+                    <div style={{ background: "#0c1322", border: "1px solid #253650", borderRadius: "8px", padding: "14px" }}>
+                      <b style={{ fontSize: "11px", color: "#f39c12", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <AlertTriangle size={13} /> Aspects Already Explored in Literature
+                      </b>
+                      <ul style={{ paddingLeft: "18px", margin: "8px 0 0", fontSize: "10px", lineHeight: "1.7", color: "#a5b7d0" }}>
+                        {ideaReport.assessment.explored_aspects.map((pt, i) => <li key={i}>{pt}</li>)}
+                      </ul>
+                    </div>
+
+                    <div style={{ background: "#0c1322", border: "1px solid #253650", borderRadius: "8px", padding: "14px" }}>
+                      <b style={{ fontSize: "11px", color: "#52d7a6", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <Sparkles size={13} /> Opportunities for Distinctive Contributions
+                      </b>
+                      <ul style={{ paddingLeft: "18px", margin: "8px 0 0", fontSize: "10px", lineHeight: "1.7", color: "#a5b7d0" }}>
+                        {ideaReport.assessment.distinctive_opportunities.map((pt, i) => <li key={i}>{pt}</li>)}
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* Prominent Mandatory Academic Disclaimer */}
+                  <div className="disclaimer-alert">
+                    <ShieldAlert />
+                    <div>
+                      <b style={{ fontSize: "11px", color: "#f3ca7d", display: "block", marginBottom: "4px" }}>
+                        Preliminary AI-Assisted Academic Assessment Notice
+                      </b>
+                      <p>{ideaReport.assessment.disclaimer}</p>
+                    </div>
+                  </div>
+                </section>
+
+                {/* SECTION 1: IDEA OVERVIEW */}
+                <section className="idea-section">
+                  <div className="idea-section-head">
+                    <div className="idea-section-icon blue"><Compass /></div>
+                    <div>
+                      <h3>Section 1: Idea Overview &amp; Scientific Dimensions</h3>
+                      <p>Structured representation extracted from your submitted concept</p>
+                    </div>
+                    <Badge tone="green">{ideaReport.analysis.research_domain}</Badge>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "14px" }}>
+                    <div>
+                      <div style={{ background: "#0c1322", border: "1px solid #23344d", borderRadius: "8px", padding: "14px", marginBottom: "12px" }}>
+                        <small style={{ fontSize: "9px", letterSpacing: "1px", color: "#7488a5", fontWeight: 700, display: "block", marginBottom: "6px" }}>
+                          IDENTIFIED RESEARCH PROBLEM
+                        </small>
+                        <p style={{ fontSize: "11px", lineHeight: "1.7", color: "#d1dfef", margin: 0 }}>
+                          "{ideaReport.analysis.problem_statement}"
+                        </p>
+                      </div>
+
+                      <div style={{ background: "#0c1322", border: "1px solid #23344d", borderRadius: "8px", padding: "14px", marginBottom: "12px" }}>
+                        <small style={{ fontSize: "9px", letterSpacing: "1px", color: "#7488a5", fontWeight: 700, display: "block", marginBottom: "8px" }}>
+                          PRIMARY RESEARCH OBJECTIVES
+                        </small>
+                        <ul style={{ paddingLeft: "18px", margin: 0, fontSize: "10px", lineHeight: "1.7", color: "#b3c4dc" }}>
+                          {ideaReport.analysis.research_objectives.map((obj, i) => <li key={i}>{obj}</li>)}
+                        </ul>
+                      </div>
+
+                      <div style={{ background: "#0c1322", border: "1px solid #23344d", borderRadius: "8px", padding: "14px" }}>
+                        <small style={{ fontSize: "9px", letterSpacing: "1px", color: "#7488a5", fontWeight: 700, display: "block", marginBottom: "6px" }}>
+                          PROPOSED METHODOLOGY
+                        </small>
+                        <p style={{ fontSize: "10px", lineHeight: "1.7", color: "#a5b8d0", margin: 0 }}>
+                          {ideaReport.analysis.proposed_methodology}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <div style={{ background: "#0c1322", border: "1px solid #23344d", borderRadius: "8px", padding: "14px" }}>
+                        <small style={{ fontSize: "9px", letterSpacing: "1px", color: "#7488a5", fontWeight: 700, display: "block", marginBottom: "6px" }}>
+                          RESEARCH DOMAIN
+                        </small>
+                        <b style={{ fontSize: "12px", color: "#6fe3cd" }}>{ideaReport.analysis.research_domain}</b>
+                      </div>
+
+                      <div style={{ background: "#0c1322", border: "1px solid #23344d", borderRadius: "8px", padding: "14px" }}>
+                        <small style={{ fontSize: "9px", letterSpacing: "1px", color: "#7488a5", fontWeight: 700, display: "block", marginBottom: "8px" }}>
+                          KEY TECHNOLOGIES &amp; CONCEPTS
+                        </small>
+                        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                          {ideaReport.analysis.key_concepts_and_technologies.map((tech, i) => (
+                            <Badge key={i} tone="amber">{tech}</Badge>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div style={{ background: "#0c1322", border: "1px solid #23344d", borderRadius: "8px", padding: "14px", flex: 1 }}>
+                        <small style={{ fontSize: "9px", letterSpacing: "1px", color: "#7488a5", fontWeight: 700, display: "block", marginBottom: "8px" }}>
+                          IMPORTANT KEYWORDS
+                        </small>
+                        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                          {ideaReport.analysis.important_keywords.map((kw, i) => (
+                            <span key={i} className="code-pill">{kw}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* SECTION 3: SIMILAR RESEARCH PAPERS */}
+                <section className="idea-section">
+                  <div className="idea-section-head">
+                    <div className="idea-section-icon purple"><BookOpen /></div>
+                    <div>
+                      <h3>Section 3: Similar Research Papers from Academic Indexes</h3>
+                      <p>Semantically related, non-fabricated scientific publications retrieved from arXiv, OpenAlex, and CrossRef</p>
+                    </div>
+                    <Badge>{ideaReport.similar_papers.length} Studies Retrieved</Badge>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    {ideaReport.similar_papers.map((paper, idx) => (
+                      <article key={idx} className="similar-paper-card">
+                        <div className="similar-paper-head">
+                          <h4>{paper.title}</h4>
+                          <Badge tone={paper.similarity_percentage >= 70 ? "red" : paper.similarity_percentage >= 45 ? "amber" : "green"}>
+                            {paper.similarity_percentage}% Similarity
+                          </Badge>
+                        </div>
+
+                        <div className="paper-meta-row">
+                          <span>Authors: <b>{paper.authors.join(", ")}</b></span>
+                          <span>•</span>
+                          <span>Year: <b>{paper.year || "n.d."}</b></span>
+                          <span>•</span>
+                          <span>Venue: <b>{paper.venue || "Academic Publication"}</b></span>
+                          {paper.doi && (
+                            <>
+                              <span>•</span>
+                              <span>DOI: <b>{paper.doi}</b></span>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="paper-abstract-box">
+                          {paper.abstract}
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
+                          <div className="paper-overlap-badge">
+                            🔍 <b>Overlap Analysis</b>: {paper.overlap_summary}
+                          </div>
+                          <a
+                            href={paper.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="paper-open-link"
+                          >
+                            Open Original Paper <ExternalLink size={12} />
+                          </a>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                {/* SECTION 4: RESEARCH GAP IDENTIFICATION */}
+                <section className="idea-section">
+                  <div className="idea-section-head">
+                    <div className="idea-section-icon amber"><Layers3 /></div>
+                    <div>
+                      <h3>Section 4: Research Gap Identification</h3>
+                      <p>Comparative analysis of covered frontiers versus underexplored opportunities</p>
+                    </div>
+                    <Badge tone="green">GAPS IDENTIFIED</Badge>
+                  </div>
+
+                  <div className="gap-grid">
+                    <div className="gap-card covered">
+                      <h4><CheckCircle2 size={14} /> Areas Covered by Previous Research</h4>
+                      <ul>
+                        {ideaReport.research_gaps.covered_areas.map((pt, i) => <li key={i}>{pt}</li>)}
+                      </ul>
+                    </div>
+
+                    <div className="gap-card underexplored">
+                      <h4><Sparkles size={14} /> Underexplored Research Areas</h4>
+                      <ul>
+                        {ideaReport.research_gaps.underexplored_areas.map((pt, i) => <li key={i}>{pt}</li>)}
+                      </ul>
+                    </div>
+
+                    <div className="gap-card directions">
+                      <h4><Compass size={14} /> Suggested Potential Research Directions</h4>
+                      <ul>
+                        {ideaReport.research_gaps.suggested_directions.map((pt, i) => <li key={i}>{pt}</li>)}
+                      </ul>
+                    </div>
+
+                    <div className="gap-card differentiation">
+                      <h4><Target size={14} /> How Your Idea Can Differentiate</h4>
+                      <ul>
+                        {ideaReport.research_gaps.differentiation_opportunities.map((pt, i) => <li key={i}>{pt}</li>)}
+                      </ul>
+                    </div>
+                  </div>
+                </section>
+
+                {/* SECTION 5: ACTIONABLE RECOMMENDATIONS */}
+                <section className="idea-section">
+                  <div className="idea-section-head">
+                    <div className="idea-section-icon green"><Sparkles /></div>
+                    <div>
+                      <h3>Section 5: Actionable Recommendations to Refine Your Idea</h3>
+                      <p>Concrete steps to sharpen scientific rigor, formulate ablation baselines, and avoid redundant research</p>
+                    </div>
+                    <Badge tone="green">ACTIONABLE GUIDANCE</Badge>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {ideaReport.recommendations.map((rec, i) => (
+                      <div key={i} className="rec-item">
+                        <div className="rec-num">{i + 1}</div>
+                        <p className="rec-text">{rec}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            )}
+
+            <footer>
+              © 2026 PaperLens · Research Idea Novelty Checker · Academic Intelligence
+              <span><i /> Verifiable Academic Sources · arXiv, OpenAlex &amp; CrossRef</span>
+            </footer>
+          </div>
+        )}
       </main>
     </div>
   );

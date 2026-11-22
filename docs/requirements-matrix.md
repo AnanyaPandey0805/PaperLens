@@ -14,3 +14,16 @@ This document maps all 10 evaluation criteria to exact files, functions, and arc
 | **8** | **Securing the Agentic System (Guardrails & Callbacks)** | `backend/app/guardrails.py` (4 Defense-in-Depth Layers) | • Layer 1: Prompt injection scanner, toxic language screener, size limits.<br>• Layer 2: Tool return type-checking callbacks & query sanitizer.<br>• Layer 3: Context sandboxing (`<UNTRUSTED_PAPER_CONTENT>`) & citation grounding.<br>• Layer 4: Mathematical score clamping & verdict consistency. Demonstrated in the **"Guardrails & Security"** tab. |
 | **9** | **Observability & Tracing (Langfuse Integration)** | `backend/app/observability.py` (`RunMonitor`, `optional_langfuse()`) | Full provenance, span durations, token estimations, and metadata exported to Langfuse and returned in `report.events`. |
 | **10** | **End-to-End Evaluation, Running Time & Cost Estimates** | `backend/evaluation/run_eval.py` & `/api/evaluation` | Evaluates diverse benchmark cases (`sample_cases.jsonl`), calculating latency in ms, running time in seconds, token counts, and cost in USD ($0.59/1M in, $0.79/1M out). Demonstrated live in the **"Evaluation & Cost"** tab. |
+
+---
+
+## 💡 New Feature: Research Idea Novelty Checker ("Check Research Idea")
+
+| Feature Dimension | Implementation Location | Capability Description |
+|---|---|---|
+| **Multi-Format Input** | `backend/app/idea_checker.py:extract_text_from_file` | Accepts raw text descriptions OR uploaded drafts in **PDF** and **DOCX** formats with automated text extraction. |
+| **Concept & Domain Analysis** | `backend/app/idea_checker.py:analyze_research_idea` | Deconstructs idea into: problem statement, objectives, proposed methodology, key concepts/technologies, domain, and keywords. |
+| **Verifiable Academic Search** | `backend/app/idea_checker.py:search_similar_papers` | Searches authentic literature across arXiv, OpenAlex, and CrossRef without fabricating DOIs, authors, or publication URLs. |
+| **Novelty Categorization & Scoring** | `backend/app/idea_checker.py:assess_novelty` | Evaluates novelty into 4 tiers (`Highly Explored`, `Partially Explored`, `Limited Existing Research`, `Potentially Novel`) + 0–100 indicative score and academic disclaimer. |
+| **5-Section Results Dashboard** | `frontend/src/App.jsx` (`appMode === "idea"`) | 1. Idea Overview<br>2. Novelty Assessment<br>3. Similar Research Papers (with direct clickable links)<br>4. Research Gap Identification<br>5. Actionable Recommendations. |
+

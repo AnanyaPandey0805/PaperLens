@@ -198,3 +198,59 @@ class EvaluationSummary(BaseModel):
     total_estimated_cost_usd: float
     average_cost_per_review_usd: float
     results: list[EvaluationCaseResult] = Field(default_factory=list)
+
+# --- Feature: Research Idea Novelty Checker Schemas ---
+class IdeaInput(BaseModel):
+    title: str = Field(default="", max_length=500)
+    idea_text: str = Field(min_length=20, max_length=80000)
+
+class IdeaAnalysis(BaseModel):
+    problem_statement: str
+    research_objectives: list[str]
+    proposed_methodology: str
+    key_concepts_and_technologies: list[str]
+    research_domain: str
+    potential_contributions: list[str]
+    important_keywords: list[str]
+
+class SimilarPaper(BaseModel):
+    paper_id: str
+    title: str
+    authors: list[str]
+    year: str | int | None = None
+    abstract: str
+    venue: str | None = None
+    doi: str | None = None
+    url: str
+    similarity_percentage: int = Field(ge=0, le=100)
+    relevance_category: Literal["high", "moderate", "low"]
+    overlap_summary: str
+
+class ResearchGap(BaseModel):
+    covered_areas: list[str]
+    underexplored_areas: list[str]
+    suggested_directions: list[str]
+    differentiation_opportunities: list[str]
+
+class NoveltyAssessment(BaseModel):
+    category: Literal["Highly Explored", "Partially Explored", "Limited Existing Research", "Potentially Novel"]
+    novelty_score: int = Field(ge=0, le=100)
+    explanation: str
+    observations: list[str]
+    explored_aspects: list[str]
+    similar_aspects: list[str]
+    distinctive_opportunities: list[str]
+    disclaimer: str
+
+class IdeaNoveltyReport(BaseModel):
+    report_id: str
+    title: str
+    submitted_idea_preview: str
+    analysis: IdeaAnalysis
+    assessment: NoveltyAssessment
+    similar_papers: list[SimilarPaper]
+    research_gaps: ResearchGap
+    recommendations: list[str]
+    total_papers_searched: int
+    execution_time_seconds: float
+    timestamp: str
